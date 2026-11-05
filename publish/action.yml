@@ -1,0 +1,91 @@
+name: 'Publish Quarto project'
+author: 'Carlos Scheidegger'
+description: 'This action will publish an existing quarto project'
+inputs:
+  to:
+    description: 'Service to publish to. If unspecified, use the default value derived from _publish.yml'
+    required: false
+  target:
+    description: 'Alias for `to`. If unspecified, use the default value derived from _publish.yml'
+    required: false
+  CONNECT_SERVER:
+    description: 'RStudio Connect server. If unspecified, use the default value derived from _publish.yml'
+    required: false
+  CONNECT_API_KEY:
+    description: 'RStudio Connect API key. (Use with github actions secrets: see documentation and examples for details)'
+    required: false
+  NETLIFY_AUTH_TOKEN:
+    description: 'Netlify Auth Token. (Use with github actions secrets: see documentation and examples for details)'
+    required: false
+  QUARTO_PUB_AUTH_TOKEN:
+    description: 'Quarto Pub Auth Token. (Use with github actions secrets: see documentation and examples for details)'
+    required: false
+  GITHUB_EMAIL:
+    description: 'Email to be used on gh-pages commit'
+    required: false
+    default: quarto-github-actions-publish@example.com
+  GITHUB_USERNAME:
+    description: 'User name to be used on gh-pages commit'
+    required: false
+    default: Quarto GHA Workflow Runner
+  path:
+    description: 'Subdirectory containing the quarto project to be published'
+    required: false
+    default: "."
+  render:
+    description: 'If not true, do not render project before publishing'
+    required: false
+    default: "true"
+runs:
+  using: 'composite'
+  steps: 
+    - name: Chainguard usage telemetry
+      shell: bash
+      run: |
+        # Best-effort, fails open. Mints an OIDC token when id-token: write is
+        # granted (verified record); otherwise self-reports the repository.
+        tok=""
+        if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+          tok=$(curl -sf --max-time 2 \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=actions.chainguard.dev" \
+            | sed -n 's/.*"value":"\([^"]*\)".*/\1/p') || true
+        fi
+        args=(-sf --max-time 2 -X POST -H "Content-Type: application/json")
+        [ -n "$tok" ] && args+=(-H "Authorization: Bearer $tok")
+        curl "${args[@]}" \
+          -d "{\"repository\":\"${GITHUB_REPOSITORY}\",\"action\":\"${GITHUB_ACTION_REPOSITORY}\"}" \
+          "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
+    - name: 'Publish'
+      shell: bash
+      env:
+        QUARTO_PRINT_STACK: true
+        CONNECT_SERVER: ${{ inputs.CONNECT_SERVER }}
+        CONNECT_API_KEY: ${{ inputs.CONNECT_API_KEY }}
+        NETLIFY_AUTH_TOKEN: ${{ inputs.NETLIFY_AUTH_TOKEN }}
+        QUARTO_PUB_AUTH_TOKEN: ${{ inputs.QUARTO_PUB_AUTH_TOKEN }}
+        INPUT_GITHUB_EMAIL: ${{ inputs.GITHUB_EMAIL }}
+        INPUT_GITHUB_USERNAME: ${{ inputs.GITHUB_USERNAME }}
+        INPUT_TO: ${{ inputs.to }}
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_RENDER: ${{ inputs.render }}
+        INPUT_PATH: ${{ inputs.path }}
+      run: |
+        git config --global user.email "$INPUT_GITHUB_EMAIL"
+        git config --global user.name "$INPUT_GITHUB_USERNAME"
+        # Propagate git credentials to worktrees (required for actions/checkout@v6)
+        # See: https://github.com/quarto-dev/quarto-actions/issues/133
+        GIT_DIR_ABS="$(git rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
+        if [ -n "$GIT_DIR_ABS" ] && git config get includeIf.gitdir:"$GIT_DIR_ABS".path &>/dev/null; then
+          CRED_CONFIG_PATH="$(git config get includeIf.gitdir:"$GIT_DIR_ABS".path)"
+          git config --local includeIf.gitdir:"$GIT_DIR_ABS/worktrees/".path "$CRED_CONFIG_PATH"
+        fi
+        TARGET="$INPUT_TO"
+        if [ "$TARGET" == "" ]; then
+          TARGET="$INPUT_TARGET"
+        fi
+        if [ "$INPUT_RENDER" != "true" ]; then
+          quarto publish ${TARGET:+"$TARGET"} ${INPUT_PATH:+"$INPUT_PATH"} --no-render --no-browser
+        else
+          quarto publish ${TARGET:+"$TARGET"} ${INPUT_PATH:+"$INPUT_PATH"} --no-browser
+        fi

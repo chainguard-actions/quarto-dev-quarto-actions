@@ -1,0 +1,33 @@
+name: Test custom path with to=all
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install fake quarto CLI
+        run: |
+          mkdir -p "$RUNNER_TEMP/fakebin"
+          cat > "$RUNNER_TEMP/fakebin/quarto" <<'EOF'
+          #!/bin/bash
+          echo "$*" > /tmp/quarto-args.txt
+          EOF
+          chmod +x "$RUNNER_TEMP/fakebin/quarto"
+          echo "$RUNNER_TEMP/fakebin" >> "$GITHUB_PATH"
+          rm -f /tmp/quarto-args.txt
+          mkdir -p my-project
+      - id: action
+        uses: .
+        with:
+          path: my-project
+          to: all
+      - name: Assert path and format passed
+        run: |
+          ACTUAL="$(cat /tmp/quarto-args.txt)"
+          echo "actual: $ACTUAL"
+          if [ "$ACTUAL" != "render my-project --to all" ]; then
+            echo "FAIL: expected 'render my-project --to all'"
+            exit 1
+          fi
+          echo "PASS"

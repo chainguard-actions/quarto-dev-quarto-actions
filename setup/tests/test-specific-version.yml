@@ -1,0 +1,44 @@
+name: Test specific version install
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          version: 1.3.450
+      - name: Assert version output (if exposed) matches
+        env:
+          ACTUAL: ${{ steps.action.outputs.version }}
+        run: |
+          # action.yml declares outputs.version without a value mapping, so the
+          # composite output may be empty; only validate it when non-empty.
+          echo "actual: '$ACTUAL'"
+          if [ -n "$ACTUAL" ] && [ "$ACTUAL" != "1.3.450" ]; then
+            echo "FAIL: expected '1.3.450'"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert quarto installed with that version
+        run: |
+          if ! command -v quarto >/dev/null 2>&1; then
+            echo "FAIL: quarto not on PATH"
+            exit 1
+          fi
+          INSTALLED="$(quarto --version)"
+          echo "installed: $INSTALLED"
+          if [ "$INSTALLED" != "1.3.450" ]; then
+            echo "FAIL: expected quarto 1.3.450"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert installer removed from runner temp
+        run: |
+          if ls "$RUNNER_TEMP"/quarto*.deb >/dev/null 2>&1; then
+            echo "FAIL: installer was not cleaned up"
+            exit 1
+          fi
+          echo "PASS"

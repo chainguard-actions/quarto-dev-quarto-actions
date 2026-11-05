@@ -1,0 +1,63 @@
+name: 'Render Quarto project'
+author: 'Carlos Scheidegger'
+description: 'This action will render an existing quarto project'
+inputs:
+  to:
+    description: 'Format to render output. Use "all" to generate all outputs, when eg rendering a book in HTML and PDF'
+    required: false
+  path:
+    description: 'Subdirectory containing the quarto project to be rendered'
+    required: false
+    default: "."
+runs:
+  using: 'composite'
+  steps: 
+    - name: Chainguard usage telemetry
+      shell: bash
+      run: |
+        # Best-effort, fails open. Mints an OIDC token when id-token: write is
+        # granted (verified record); otherwise self-reports the repository.
+        tok=""
+        if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+          tok=$(curl -sf --max-time 2 \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=actions.chainguard.dev" \
+            | sed -n 's/.*"value":"\([^"]*\)".*/\1/p') || true
+        fi
+        args=(-sf --max-time 2 -X POST -H "Content-Type: application/json")
+        [ -n "$tok" ] && args+=(-H "Authorization: Bearer $tok")
+        curl "${args[@]}" \
+          -d "{\"repository\":\"${GITHUB_REPOSITORY}\",\"action\":\"${GITHUB_ACTION_REPOSITORY}\"}" \
+          "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
+    # Chrome v128 started to create problem. Pin previous version in the meantime
+    # - name: Install Chrome
+    # uses: browser-actions/setup-chrome@v1
+    #  with:
+    #    chrome-version: 127
+    # The Check Chromium step appears necessary to avoid a crash/hang when rendering PDFs
+    # https://github.com/quarto-dev/quarto-actions/issues/45#issuecomment-1562599451
+    #
+    # chromium is installed in the ubuntu 21 runners in GHA, so no need to install it
+    #- name: 'Check Chromium'
+    #  if: ${{ runner.os == 'Linux' }}
+    #  run: |
+    #    echo $(which google-chrome)
+    #    $(which google-chrome) --headless --no-sandbox --disable-gpu --renderer-process-limit=1 https://www.chromestatus.com
+    #  shell: bash
+    - name: 'Render'
+      env:
+        QUARTO_PRINT_STACK: true
+        INPUT_TO: ${{ inputs.to }}
+        INPUT_PATH: ${{ inputs.path }}
+      run: |
+        if [ "$INPUT_TO" == "" ]; then
+          quarto render ${INPUT_PATH:+"$INPUT_PATH"}
+        else
+          quarto render ${INPUT_PATH:+"$INPUT_PATH"} --to "$INPUT_TO"
+        fi
+        if [ -f "_book" ]; then
+          echo "QUARTO_OUTPUT=_book" >> $GITHUB_ENV
+        elif [ -f "_site" ]; then
+          echo "QUARTO_OUTPUT=_site" >> $GITHUB_ENV
+        fi
+      shell: bash

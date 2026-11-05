@@ -1,0 +1,54 @@
+name: Test credentials env propagation and git identity
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install fake quarto
+        run: |
+          mkdir -p /tmp/fakebin
+          cat > /tmp/fakebin/quarto <<'EOF'
+          #!/bin/sh
+          echo "$*" > /tmp/quarto-args.log
+          {
+            echo "CONNECT_SERVER=$CONNECT_SERVER"
+            echo "CONNECT_API_KEY=$CONNECT_API_KEY"
+            echo "NETLIFY_AUTH_TOKEN=$NETLIFY_AUTH_TOKEN"
+            echo "QUARTO_PUB_AUTH_TOKEN=$QUARTO_PUB_AUTH_TOKEN"
+            echo "QUARTO_PRINT_STACK=$QUARTO_PRINT_STACK"
+          } > /tmp/quarto-env.log
+          exit 0
+          EOF
+          chmod +x /tmp/fakebin/quarto
+          rm -f /tmp/quarto-args.log /tmp/quarto-env.log
+          echo "/tmp/fakebin" >> "$GITHUB_PATH"
+      - id: action
+        uses: .
+        with:
+          CONNECT_SERVER: https://connect.example.com
+          CONNECT_API_KEY: connect-key-123
+          NETLIFY_AUTH_TOKEN: netlify-tok-456
+          QUARTO_PUB_AUTH_TOKEN: qpub-tok-789
+          GITHUB_EMAIL: tester@example.com
+          GITHUB_USERNAME: Test Runner
+      - name: Assert args, env and git config
+        run: |
+          ARGS="$(cat /tmp/quarto-args.log)"
+          echo "args: $ARGS"
+          cat /tmp/quarto-env.log
+          fail=0
+          [ "$ARGS" = "publish . --no-browser" ] || { echo "FAIL: args"; fail=1; }
+          grep -qx 'CONNECT_SERVER=https://connect.example.com' /tmp/quarto-env.log || { echo "FAIL: CONNECT_SERVER"; fail=1; }
+          grep -qx 'CONNECT_API_KEY=connect-key-123' /tmp/quarto-env.log || { echo "FAIL: CONNECT_API_KEY"; fail=1; }
+          grep -qx 'NETLIFY_AUTH_TOKEN=netlify-tok-456' /tmp/quarto-env.log || { echo "FAIL: NETLIFY_AUTH_TOKEN"; fail=1; }
+          grep -qx 'QUARTO_PUB_AUTH_TOKEN=qpub-tok-789' /tmp/quarto-env.log || { echo "FAIL: QUARTO_PUB_AUTH_TOKEN"; fail=1; }
+          grep -qx 'QUARTO_PRINT_STACK=true' /tmp/quarto-env.log || { echo "FAIL: QUARTO_PRINT_STACK"; fail=1; }
+          EMAIL="$(git config --global user.email)"
+          NAME="$(git config --global user.name)"
+          echo "email: $EMAIL name: $NAME"
+          [ "$EMAIL" = "tester@example.com" ] || { echo "FAIL: email"; fail=1; }
+          [ "$NAME" = "Test Runner" ] || { echo "FAIL: name"; fail=1; }
+          [ "$fail" = 0 ] || exit 1
+          echo "PASS"

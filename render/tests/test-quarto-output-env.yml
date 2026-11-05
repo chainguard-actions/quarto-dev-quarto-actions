@@ -1,0 +1,30 @@
+name: Test QUARTO_OUTPUT env export
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install fake quarto CLI that creates _site
+        run: |
+          mkdir -p "$RUNNER_TEMP/fakebin"
+          cat > "$RUNNER_TEMP/fakebin/quarto" <<'EOF'
+          #!/bin/bash
+          echo "$*" > /tmp/quarto-args.txt
+          rm -rf _site _book
+          echo "rendered" > _site
+          EOF
+          chmod +x "$RUNNER_TEMP/fakebin/quarto"
+          echo "$RUNNER_TEMP/fakebin" >> "$GITHUB_PATH"
+          rm -f /tmp/quarto-args.txt
+      - id: action
+        uses: .
+      - name: Assert QUARTO_OUTPUT=_site
+        run: |
+          echo "QUARTO_OUTPUT='$QUARTO_OUTPUT'"
+          if [ "$QUARTO_OUTPUT" != "_site" ]; then
+            echo "FAIL: expected QUARTO_OUTPUT=_site"
+            exit 1
+          fi
+          echo "PASS"

@@ -1,0 +1,42 @@
+name: Test pre-release install
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          version: pre-release
+      - name: Assert quarto installed with a valid version
+        env:
+          ACTUAL: ${{ steps.action.outputs.version }}
+        run: |
+          if ! command -v quarto >/dev/null 2>&1; then
+            echo "FAIL: quarto not on PATH"
+            exit 1
+          fi
+          INSTALLED="$(quarto --version)"
+          echo "installed: $INSTALLED"
+          if ! echo "$INSTALLED" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "FAIL: installed quarto version is not x.y.z"
+            exit 1
+          fi
+          echo "output: '$ACTUAL'"
+          if [ -n "$ACTUAL" ] && [ "$ACTUAL" != "$INSTALLED" ]; then
+            echo "FAIL: output version does not match installed"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert installed version matches latest pre-release
+        run: |
+          EXPECTED="$(curl -sfL https://quarto.org/docs/download/_prerelease.json | jq -r '.version' || true)"
+          INSTALLED="$(quarto --version)"
+          echo "expected: $EXPECTED installed: $INSTALLED"
+          if [ -n "$EXPECTED" ] && [ "$EXPECTED" != "null" ] && [ "$EXPECTED" != "$INSTALLED" ]; then
+            echo "FAIL: installed version is not the latest pre-release"
+            exit 1
+          fi
+          echo "PASS"

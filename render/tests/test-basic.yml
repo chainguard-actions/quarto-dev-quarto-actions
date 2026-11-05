@@ -1,0 +1,45 @@
+name: Test basic usage (default path, no format)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install fake quarto CLI
+        run: |
+          mkdir -p "$RUNNER_TEMP/fakebin"
+          cat > "$RUNNER_TEMP/fakebin/quarto" <<'EOF'
+          #!/bin/bash
+          echo "$*" > /tmp/quarto-args.txt
+          echo "QUARTO_PRINT_STACK=$QUARTO_PRINT_STACK" > /tmp/quarto-env.txt
+          echo "fake quarto $*"
+          EOF
+          chmod +x "$RUNNER_TEMP/fakebin/quarto"
+          echo "$RUNNER_TEMP/fakebin" >> "$GITHUB_PATH"
+          rm -f /tmp/quarto-args.txt /tmp/quarto-env.txt
+      - id: action
+        uses: .
+      - name: Assert quarto render invoked with default path
+        run: |
+          ACTUAL="$(cat /tmp/quarto-args.txt)"
+          echo "actual: $ACTUAL"
+          if [ "$ACTUAL" != "render ." ]; then
+            echo "FAIL: expected 'render .'"
+            exit 1
+          fi
+          ENVV="$(cat /tmp/quarto-env.txt)"
+          echo "env: $ENVV"
+          if [ "$ENVV" != "QUARTO_PRINT_STACK=true" ]; then
+            echo "FAIL: expected QUARTO_PRINT_STACK=true"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert QUARTO_OUTPUT not set when no _book/_site
+        run: |
+          echo "QUARTO_OUTPUT='$QUARTO_OUTPUT'"
+          if [ -n "$QUARTO_OUTPUT" ]; then
+            echo "FAIL: QUARTO_OUTPUT should be unset"
+            exit 1
+          fi
+          echo "PASS"

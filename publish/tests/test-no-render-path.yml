@@ -1,0 +1,35 @@
+name: Test render false with custom path
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install fake quarto
+        run: |
+          mkdir -p /tmp/fakebin
+          cat > /tmp/fakebin/quarto <<'EOF'
+          #!/bin/sh
+          echo "$*" > /tmp/quarto-args.log
+          echo "fake quarto called with: $*"
+          exit 0
+          EOF
+          chmod +x /tmp/fakebin/quarto
+          rm -f /tmp/quarto-args.log
+          echo "/tmp/fakebin" >> "$GITHUB_PATH"
+      - id: action
+        uses: .
+        with:
+          to: netlify
+          path: docs/site
+          render: "false"
+      - name: Assert --no-render and path passed
+        run: |
+          ACTUAL="$(cat /tmp/quarto-args.log)"
+          echo "actual: $ACTUAL"
+          if [ "$ACTUAL" != "publish netlify docs/site --no-render --no-browser" ]; then
+            echo "FAIL: expected 'publish netlify docs/site --no-render --no-browser'"
+            exit 1
+          fi
+          echo "PASS"
